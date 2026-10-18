@@ -1,0 +1,446 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101923">
+<title>Ajedrez Maestro IA</title>
+<style>
+:root{--bg:#101923;--panel:#1a2939;--line:#34495c;--gold:#e7bd69;--muted:#aab9c9;--green:#65e0a2;--red:#ff8585}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:#f3f6fa;font-family:system-ui,Arial,sans-serif}
+header{text-align:center;padding:17px;border-bottom:1px solid var(--line);background:#111d29}
+h1{font-size:24px;margin:0;color:var(--gold)}
+header p{font-size:12px;color:var(--muted);margin:5px 0 0}
+main{max-width:1200px;margin:auto;padding:12px;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:12px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:14px;min-width:0}
+h2{font-size:17px;color:var(--gold);margin:0 0 12px}
+h3{font-size:14px;margin:12px 0 6px}
+.board{display:grid;grid-template-columns:repeat(8,1fr);width:100%;aspect-ratio:1;border:3px solid #886c4b;overflow:hidden}
+.sq{position:relative;display:flex;align-items:center;justify-content:center;border:0;border-radius:0;padding:0;aspect-ratio:1;font-size:clamp(26px,6vw,57px);line-height:1;cursor:pointer}
+.light{background:#f0dfbf}.dark{background:#956c4b}
+.sq.sel{box-shadow:inset 0 0 0 4px #ffe16b}
+.sq.last{background:#c3c45e}
+.sq.target{box-shadow:inset 0 0 0 4px #39d8a1}
+.coord{position:absolute;left:3px;bottom:1px;font-size:10px;color:#222;font-family:Arial}
+.bar{display:flex;flex-wrap:wrap;gap:7px;margin:11px 0;align-items:center}
+button,select{color:#f3f6fa;background:#273b4e;border:1px solid #465d72;border-radius:8px;padding:9px 10px;font-size:13px;cursor:pointer}
+button:disabled{opacity:.4}
+button:hover{border-color:var(--gold)}
+.primary{background:#876126;border-color:var(--gold)}
+label,.muted,.small{font-size:12px;color:var(--muted);line-height:1.6}
+select{max-width:100%}
+.status{padding:10px;border:1px solid var(--line);border-radius:9px;margin:8px 0;line-height:1.55;font-size:13px}
+#status{color:var(--green)}
+#engineStatus{overflow-wrap:anywhere}
+#coach{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.75}
+#variation{overflow-wrap:anywhere;font-size:12px;line-height:1.7}
+#eval{font-size:23px;color:var(--gold);font-weight:700}
+#moves{display:flex;flex-wrap:wrap;gap:5px;max-height:155px;overflow:auto}
+.mv{font-size:12px;padding:6px}
+.mv.active{background:#805d27;border-color:var(--gold)}
+input[type=range]{width:100%;accent-color:var(--gold)}
+footer{text-align:center;color:var(--muted);font-size:11px;padding:14px}
+@media(max-width:760px){main{grid-template-columns:1fr;padding:7px}.panel{padding:10px}.sq{font-size:clamp(25px,10vw,53px)}h1{font-size:21px}}
+</style>
+</head>
+<body>
+<header>
+<h1>♟ AJEDREZ MAESTRO IA</h1>
+<p>Entrenamiento táctico, estrategia, ataque y defensa</p>
+</header>
+
+<main>
+<section class="panel">
+<div class="bar">
+<span id="turn" class="muted">Preparando partida...</span>
+<span id="check" class="muted"></span>
+</div>
+<div id="board" class="board" aria-label="Tablero de ajedrez"></div>
+<div class="bar">
+<button id="new" class="primary">Nueva partida</button>
+<button id="undo">↶ Atrás</button>
+<button id="redo">Adelante ↷</button>
+<button id="flip">Girar</button>
+</div>
+<div class="bar">
+<label for="side">Juegas con</label>
+<select id="side">
+<option value="w">Blancas</option>
+<option value="b">Negras</option>
+</select>
+<label for="depth">Análisis</label>
+<select id="depth">
+<option value="8">Rápido</option>
+<option value="12" selected>Avanzado</option>
+<option value="16">Experto</option>
+<option value="20">Profundo</option>
+<option value="24">Máximo</option>
+</select>
+</div>
+<div class="bar">
+<button id="hint">💡 Recomendar jugada</button>
+<button id="analyze">Analizar posición</button>
+<button id="auto">▶ Ver partida</button>
+</div>
+<div class="status">
+<div class="muted">Evaluación de la posición</div>
+<div id="eval">—</div>
+<div id="engineStatus">Conectando con el motor...</div>
+</div>
+<p class="small">Toca una pieza y después su destino. El rival juega automáticamente tras tu movimiento. Si el motor no se carga, se mostrará el aviso correspondiente.</p>
+</section>
+
+<section class="panel">
+<h2>Tu entrenador personal</h2>
+<div id="status" class="status">Cargando el tablero...</div>
+<div class="status">
+<h3>Explicación detallada</h3>
+<div id="coach">Aquí aprenderás qué has hecho bien, qué debes mejorar y cómo continuar.</div>
+</div>
+<div class="status">
+<h3>Mejor continuación y variantes</h3>
+<div id="variation">Todavía no hay análisis.</div>
+</div>
+<div class="status">
+<h3>Historial de movimientos</h3>
+<div id="moves"></div>
+</div>
+<div class="bar">
+<button id="pgn">Copiar PGN</button>
+<button id="start">Ir al comienzo</button>
+</div>
+<div class="status">
+<h3>Guía estratégica</h3>
+<div class="small">
+<b>Apertura:</b> desarrolla caballos y alfiles, lucha por el centro y protege al rey.<br>
+<b>Medio juego:</b> identifica objetivos, piezas indefensas, columnas abiertas y amenazas tácticas.<br>
+<b>Ataque:</b> busca jaques, capturas y amenazas; no sacrifiques material sin una compensación concreta.<br>
+<b>Defensa:</b> detecta la amenaza rival, busca intercambios favorables y mejora la seguridad de tu rey.<br>
+<b>Final:</b> activa el rey, crea peones pasados y calcula las carreras de promoción.<br>
+<b>Regla de oro:</b> antes de mover, pregunta qué amenaza tu rival y qué cambia después de tu jugada.
+</div>
+</div>
+</section>
+</main>
+<footer>El motor calcula variantes; las explicaciones estratégicas son orientativas y no sustituyen un análisis humano completo.</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id);
+if(typeof Chess==="undefined"){
+ $("status").textContent="No se cargó chess.js. Comprueba tu conexión a Internet y recarga.";
+ $("engineStatus").textContent="Biblioteca de reglas no disponible.";
+ return;
+}
+
+const game=new Chess();
+const symbols={
+ w:{k:"♔",q:"♕",r:"♖",b:"♗",n:"♘",p:"♙"},
+ b:{k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"}
+};
+let records=[],cursor=0,selected=null,legal=[];
+let orientation="w",last=null,engine=null,ready=false;
+let thinking=false,pending=null,requestId=0,autoTimer=null;
+let currentEval=null,previousEval=null,lastAnalysis=null;
+let botGeneration=0;
+
+function say(s){$("status").textContent=s}
+function coach(s){$("coach").textContent=s}
+function engineStatus(s){$("engineStatus").textContent=s}
+function colorName(c){return c==="w"?"blancas":"negras"}
+function sideName(c){return c==="w"?"Blancas":"Negras"}
+function render(){
+ const board=$("board");board.innerHTML="";
+ const fs=orientation==="w"?"abcdefgh".split(""):"hgfedcba".split("");
+ const rs=orientation==="w"?[8,7,6,5,4,3,2,1]:[1,2,3,4,5,6,7,8];
+ rs.forEach(r=>fs.forEach(f=>{
+  const sq=f+r,p=game.get(sq),el=document.createElement("button");
+  el.type="button";el.className="sq "+(((f.charCodeAt(0)-97+r)%2===0)?"dark":"light");
+  if(selected===sq)el.classList.add("sel");
+  if(last&&(last.from===sq||last.to===sq))el.classList.add("last");
+  if(legal.some(m=>m.to===sq))el.classList.add("target");
+  el.setAttribute("aria-label",sq+(p?" pieza "+p.type:" casilla vacía"));
+  if(p)el.appendChild(document.createTextNode(symbols[p.color][p.type]));
+  if((orientation==="w"&&r===1)||(orientation==="b"&&r===8)){
+   const c=document.createElement("span");c.className="coord";c.textContent=f;el.appendChild(c);
+  }
+  el.onclick=()=>clickSquare(sq);
+  board.appendChild(el);
+ }));
+ $("turn").textContent=game.game_over()?"Partida terminada":sideName(game.turn())+" juegan";
+ $("check").textContent=game.in_check()?"¡JAQUE!":"";
+ renderHistory();
+}
+function renderHistory(){
+ const box=$("moves");box.innerHTML="";
+ records.forEach((rec,i)=>{
+  const b=document.createElement("button");b.className="mv"+(i===cursor-1?" active":"");
+  b.textContent=(i%2===0?(Math.floor(i/2)+1)+". ":"")+rec.san;
+  b.onclick=()=>goTo(i+1);box.appendChild(b);
+ });
+ $("undo").disabled=cursor===0;
+ $("redo").disabled=cursor===records.length;
+}
+function gameMessage(){
+ if(game.in_checkmate())return "Jaque mate. Ganan "+(game.turn()==="w"?"las negras.":"las blancas.");
+ if(game.in_stalemate())return "Tablas por ahogado.";
+ if(game.in_draw())return "Tablas: la partida ha terminado en empate.";
+ if(game.in_check())return "Jaque: debes responder a la amenaza contra tu rey.";
+ return "Turno de "+colorName(game.turn())+".";
+}
+function clickSquare(sq){
+ if(thinking||game.game_over()||cursor!==records.length)return;
+ if(game.turn()!==$("side").value)return;
+ if(selected){
+  let m=game.move({from:selected,to:sq,promotion:"q"});
+  if(m){
+   const fenBefore=records.length?records[records.length-1].fenAfter:new Chess().fen();
+   records.push({from:m.from,to:m.to,promotion:m.promotion||"q",san:m.san,fenBefore,fenAfter:game.fen()});
+   cursor=records.length;last={from:m.from,to:m.to};selected=null;legal=[];
+   render();
+   say(gameMessage());
+   coach("Has jugado "+m.san+".\nVoy a comparar la posición anterior con la nueva, identificar las amenazas y buscar la respuesta del rival. No necesitas pulsar ningún botón.");
+   userMove(m,fenBefore);
+   return;
+  }
+ }
+ const p=game.get(sq);
+ if(p&&p.color===game.turn()){
+  selected=sq;legal=game.moves({square:sq,verbose:true});
+ }else{selected=null;legal=[];}
+ render();
+}
+function goTo(n){
+ stopAuto();botGeneration++;
+ if(thinking){cancelSearch();}
+ game.reset();
+ for(let i=0;i<n;i++){
+  const r=records[i];
+  game.move({from:r.from,to:r.to,promotion:r.promotion||"q"});
+ }
+ cursor=n;selected=null;legal=[];
+ const r=records[n-1];last=r?{from:r.from,to:r.to}:null;
+ render();say(gameMessage());
+ coach(n===0?"Posición inicial. Desarrolla las piezas y controla el centro.":"Has retrocedido o avanzado en el historial. Pulsa Analizar posición para estudiar esta posición.");
+}
+function cancelSearch(){
+ if(engine&&thinking){
+  try{engine.postMessage("stop")}catch(e){}
+ }
+ if(pending){const p=pending;pending=null;p.resolve(null);}
+ thinking=false;
+}
+function newGame(){
+ botGeneration++;cancelSearch();stopAuto();game.reset();records=[];cursor=0;
+ selected=null;legal=[];last=null;currentEval=null;previousEval=null;lastAnalysis=null;
+ $("eval").textContent="—";$("variation").textContent="Todavía no hay análisis.";
+ coach("Nueva partida.\nDesarrolla tus piezas, controla el centro y busca la seguridad del rey.");
+ render();say("Partida nueva. "+gameMessage());
+ if($("side").value==="b")setTimeout(()=>botTurn(botGeneration),250);
+}
+function createEngine(){
+ try{
+  // Worker aislado para no bloquear la interfaz.
+  // La compilación clásica se usa como alternativa de un solo archivo.
+  const source='importScripts("https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js");';
+  const blob=new Blob([source],{type:"text/javascript"});
+  engine=new Worker(URL.createObjectURL(blob));
+  engine.onmessage=e=>onEngineMessage(String(e.data||""));
+  engine.onerror=()=>{
+   ready=false;thinking=false;
+   engineStatus("Stockfish no pudo cargarse. Puede estar bloqueado por el navegador o la red.");
+   if(pending){const p=pending;pending=null;p.resolve(null);}
+  };
+  engine.postMessage("uci");
+  engineStatus("Iniciando motor de análisis...");
+ }catch(e){
+  engineStatus("No se pudo crear el motor. Comprueba el navegador y la conexión.");
+ }
+}
+function onEngineMessage(line){
+ if(line==="uciok"){engine.postMessage("isready");return}
+ if(line==="readyok"){
+  ready=true;engineStatus("Motor listo. Esperando una jugada.");
+  return;
+ }
+ if(!pending)return;
+ const p=pending;
+ if(line.startsWith("info ")){
+  const d=line.match(/\bdepth (\d+)/);
+  if(d)p.result.depth=Number(d[1]);
+  const sc=line.match(/\bscore (cp|mate) (-?\d+)/);
+  if(sc){p.result.type=sc[1];p.result.score=Number(sc[2]);}
+  const pv=line.match(/\bpv (.+)$/);
+  if(pv)p.result.pv=pv[1];
+ }
+ if(line.startsWith("bestmove")){
+  const m=line.match(/^bestmove (\S+)/);
+  p.result.best=m&&m[1]!=="(none)"?m[1]:null;
+  pending=null;thinking=false;p.resolve(p.result);
+ }
+}
+function search(fen,depth){
+ return new Promise(resolve=>{
+  if(!engine||!ready||thinking){resolve(null);return}
+  thinking=true;
+  const id=++requestId;
+  pending={id,resolve,result:{fen,depth:0,score:null,type:"cp",pv:"",best:null}};
+  engineStatus("Calculando jugadas... profundidad solicitada "+depth+".");
+  engine.postMessage("position fen "+fen);
+  engine.postMessage("go depth "+depth);
+ });
+}
+function scoreWhite(r){
+ if(!r||r.score===null)return null;
+ let score=r.type==="mate"?(Math.sign(r.score||1)*(100000-Math.abs(r.score)*1000)):r.score;
+ const turn=r.fen.split(" ")[1];
+ return turn==="w"?score:-score;
+}
+function scoreText(r){
+ if(!r||r.score===null)return "Evaluación no disponible";
+ if(r.type==="mate")return "Mate en "+r.score;
+ const s=scoreWhite(r)/100;
+ return (s>0?"+":"")+s.toFixed(2);
+}
+function sanFor(fen,uci){
+ if(!uci||uci.length<4)return null;
+ const c=new Chess(fen);
+ const m=c.move({from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci[4]||"q"});
+ return m?m.san:null;
+}
+function explain(m,before,after,fenBefore){
+ let out="Tu jugada: "+m.san+".\n";
+ if(before&&after){
+  const a=scoreWhite(before),b=scoreWhite(after);
+  const loss=game.turn()==="b"?a-b:b-a;
+  const lossCp=Math.round(loss);
+  out+="\nEvaluación anterior: "+scoreText(before)+".\nEvaluación posterior: "+scoreText(after)+".\n";
+  if(lossCp<=15)out+="\nValoración orientativa: la evaluación se mantiene aproximadamente estable. La jugada puede ser correcta, pero conviene revisar las variantes.";
+  else if(lossCp<=60)out+="\nValoración orientativa: posible imprecisión. Comprueba si has cedido una oportunidad táctica o permitido una amenaza.";
+  else if(lossCp<=150)out+="\nValoración orientativa: posible error. Compara la mejor continuación del motor con tu jugada y busca el material o la iniciativa que se ha perdido.";
+  else out+="\nValoración orientativa: posible error grave. Revisa amenazas directas, piezas indefensas, jaques y capturas del rival.";
+  out+="\nEstas categorías son aproximadas y no equivalen a una clasificación oficial.";
+ }else{
+  out+="\nNo se pudo comparar la evaluación antes y después de la jugada.";
+ }
+ if(after&&after.best){
+  const san=sanFor(game.fen(),after.best);
+  out+="\n\nLa mejor respuesta calculada para el turno actual es: "+(san||after.best)+".";
+  out+="\nProfundidad alcanzada: "+after.depth+".";
+ }
+ out+="\n\nCómo estudiar la posición:\n1. Identifica la amenaza inmediata del rival.\n2. Busca todos los jaques y capturas posibles.\n3. Revisa qué piezas están atacadas o indefensas.\n4. Comprueba la seguridad de ambos reyes.\n5. Compara tu plan con la variante del motor.";
+ coach(out);
+}
+async function userMove(m,fenBefore){
+ const gen=botGeneration;
+ if(!ready){
+  coach("Tu jugada "+m.san+" es legal, pero Stockfish todavía no está disponible. Se intentará una respuesta legal de emergencia; no será una jugada de nivel maestro.");
+  await fallbackBot(gen);
+  return;
+ }
+ // Primera búsqueda: referencia de la posición antes de tu movimiento.
+ const before=await search(fenBefore,Number($("depth").value));
+ if(gen!==botGeneration)return;
+ // Segunda búsqueda: mejor respuesta del motor a la posición actual.
+ const after=await search(game.fen(),Number($("depth").value));
+ if(gen!==botGeneration)return;
+ if(after)explain(m,before,after,fenBefore);
+ if(after&&after.best){
+  previousEval=after;
+  const move=game.move({from:after.best.slice(0,2),to:after.best.slice(2,4),promotion:after.best[4]||"q"});
+  if(move){
+   records=records.slice(0,cursor);
+   records.push({from:move.from,to:move.to,promotion:move.promotion||"q",san:move.san,fenBefore:game.fen(),fenAfter:""});
+   records[records.length-1].fenAfter=game.fen();
+   cursor=records.length;last={from:move.from,to:move.to};
+   $("eval").textContent=scoreText(after);
+   render();say(gameMessage());
+   coach($("coach").textContent+"\n\nRespuesta automática del rival: "+move.san+". La partida continúa.");
+   engineStatus("Stockfish respondió correctamente.");
+   return;
+  }
+ }
+ await fallbackBot(gen);
+}
+async function fallbackBot(gen){
+ if(gen!==botGeneration||game.game_over()||game.turn()===$("side").value)return;
+ // Solo se usa si el motor falla; nunca se presenta como juego maestro.
+ const moves=game.moves({verbose:true});
+ if(!moves.length)return;
+ const chosen=moves[Math.floor(Math.random()*moves.length)];
+ const m=game.move({from:chosen.from,to:chosen.to,promotion:chosen.promotion||"q"});
+ if(m){
+  records=records.slice(0,cursor);
+  records.push({from:m.from,to:m.to,promotion:m.promotion||"q",san:m.san,fenBefore:"",fenAfter:game.fen()});
+  cursor=records.length;last={from:m.from,to:m.to};
+  render();say(gameMessage());
+  coach("Respuesta de emergencia: "+m.san+".\nEl motor no está disponible, así que esta jugada es legal pero aleatoria y NO tiene nivel maestro. Revisa la conexión para usar Stockfish.");
+ }
+}
+async function botTurn(gen){
+ if(gen!==botGeneration||game.game_over()||game.turn()===$("side").value)return;
+ const r=ready?await search(game.fen(),Number($("depth").value)):null;
+ if(gen!==botGeneration)return;
+ if(r&&r.best){
+  const m=game.move({from:r.best.slice(0,2),to:r.best.slice(2,4),promotion:r.best[4]||"q"});
+  if(m){
+   records.push({from:m.from,to:m.to,promotion:m.promotion||"q",san:m.san,fenBefore:"",fenAfter:game.fen()});
+   cursor=records.length;last={from:m.from,to:m.to};render();say(gameMessage());
+   coach("El rival juega "+m.san+". Ahora te toca jugar. Analiza las amenazas y elige tu plan.");
+   return;
+  }
+ }
+ await fallbackBot(gen);
+}
+$("new").onclick=newGame;
+$("start").onclick=()=>goTo(0);
+$("undo").onclick=()=>goTo(Math.max(0,cursor-1));
+$("redo").onclick=()=>goTo(Math.min(records.length,cursor+1));
+$("flip").onclick=()=>{orientation=orientation==="w"?"b":"w";render()};
+$("side").onchange=newGame;
+$("depth").onchange=()=>engineStatus("Profundidad seleccionada: "+$("depth").value+". Se aplicará al próximo análisis.");
+$("hint").onclick=async()=>{
+ if(!ready){coach("Stockfish todavía no está listo. Comprueba la conexión.");return}
+ if(game.turn()!==$("side").value){coach("Espera tu turno para solicitar una pista.");return}
+ const r=await search(game.fen(),Number($("depth").value));
+ if(r){
+  const s=sanFor(game.fen(),r.best);
+  coach("Mejor jugada encontrada: "+(s||"no disponible")+".\nEvaluación: "+scoreText(r)+".\nProfundidad: "+r.depth+".\n\nVariante: "+(r.pv||"no disponible")+"\n\nAntes de jugarla, pregúntate qué amenaza crea, qué piezas defiende y qué respuesta tiene el rival.");
+  $("variation").textContent=r.pv||"No hay variante disponible.";
+  $("eval").textContent=scoreText(r);
+ }
+};
+$("analyze").onclick=async()=>{
+ if(!ready){coach("El motor no está disponible. Comprueba la conexión.");return}
+ const r=await search(game.fen(),Number($("depth").value));
+ if(r){
+  $("eval").textContent=scoreText(r);
+  $("variation").textContent="Mejor continuación: "+(sanFor(game.fen(),r.best)||"no disponible")+"\nVariante completa: "+(r.pv||"no disponible");
+  coach("Análisis de la posición.\nEvaluación: "+scoreText(r)+".\nProfundidad: "+r.depth+".\n\nExamina la variante y busca jaques, capturas, amenazas, piezas indefensas y planes de ataque o defensa. El motor calcula jugadas; estas indicaciones son una guía de estudio, no una explicación humana exhaustiva de cada variante.");
+ }
+};
+$("pgn").onclick=async()=>{
+ const text=game.pgn();
+ try{await navigator.clipboard.writeText(text);say("Partida PGN copiada.");}
+ catch(e){coach("No se pudo copiar automáticamente. Copia este texto:\n"+text);}
+};
+$("auto").onclick=()=>{
+ if(autoTimer){stopAuto();return}
+ $("auto").textContent="⏸ Pausar";
+ let n=cursor;
+ autoTimer=setInterval(()=>{
+  if(n>=records.length){stopAuto();return}
+  n++;goTo(n);
+ },900);
+};
+function stopAuto(){if(autoTimer)clearInterval(autoTimer);autoTimer=null;$("auto").textContent="▶ Ver partida"}
+
+render();createEngine();
+})();
+</script>
+</body>
+</html>
